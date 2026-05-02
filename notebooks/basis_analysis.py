@@ -168,10 +168,6 @@ edge_score = win_rate * sharpe_proxy
 print("\n--- EDGE SCORE ---")
 print(edge_score)
 
-# =========================================================
-# 🔥 EXPORT VISUALS (THIS IS WHAT YOU USE FOR LINKEDIN)
-# =========================================================
-
 # -----------------------------
 # HERO IMAGE (BASIS)
 # -----------------------------
