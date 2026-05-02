@@ -44,6 +44,12 @@ df = pd.merge(hh, aeco, on="Date", how="inner")
 df = pd.merge(df, storage, on="Date", how="inner")
 
 # -----------------------------
+# DROP NA SAFETY
+# -----------------------------
+
+df = df.dropna().reset_index(drop=True)
+
+# -----------------------------
 # FEATURE ENGINEERING
 # -----------------------------
 
@@ -83,13 +89,13 @@ df["Spread_Regime"] = np.where(
 )
 
 # -----------------------------
-# STORAGE REGIME (DYNAMIC)
+# STORAGE REGIME (SMOOTHED)
 # -----------------------------
 
-storage_mean = df["Storage"].rolling(52).mean()
+storage_ma = df["Storage"].rolling(52).mean()
 
 df["Storage_Regime"] = np.where(
-    df["Storage"] > storage_mean,
+    df["Storage"] > storage_ma,
     "High Storage (Bearish)",
     "Low Storage (Bullish)"
 )
@@ -114,14 +120,16 @@ df["Trade_Signal"] = np.where(
 )
 
 # -----------------------------
-# BACKTEST (SIMPLE SIGNAL MODEL)
+# BACKTEST (NO LOOKAHEAD BIAS)
 # -----------------------------
 
-df["signal_return"] = df["price_change"] * np.where(
+signal = np.where(
     df["Trade_Signal"] == "Strong Bullish Bias",
     1,
     np.where(df["Trade_Signal"] == "Strong Bearish Bias", -1, 0)
 )
+
+df["signal_return"] = df["price_change"].shift(-1) * signal
 
 df["cumulative_pnl"] = df["signal_return"].cumsum()
 
@@ -129,38 +137,26 @@ df["cumulative_pnl"] = df["signal_return"].cumsum()
 # PLOTS
 # -----------------------------
 
-# 1. STRATEGY PERFORMANCE
 plt.figure()
 plt.plot(df["Date"], df["cumulative_pnl"])
-plt.title("Natural Gas Strategy Backtest (Simple Model)")
-plt.xlabel("Date")
-plt.ylabel("Cumulative PnL")
+plt.title("Natural Gas Strategy Backtest")
 plt.show()
 
-# 2. PRICES
 plt.figure()
 plt.plot(df["Date"], df["HenryHub"], label="Henry Hub")
 plt.plot(df["Date"], df["AECO"], label="AECO")
 plt.legend()
-plt.title("North American Gas Prices")
 plt.show()
 
-# 3. BASIS
 plt.figure()
 plt.plot(df["Date"], df["Basis"])
 plt.axhline(0)
-plt.title("AECO - Henry Hub Basis Spread")
 plt.show()
 
-# 4. PRICE VS BASIS
 plt.figure()
 plt.scatter(df["HenryHub"], df["Basis"])
-plt.title("Price vs Basis Relationship")
-plt.xlabel("Henry Hub")
-plt.ylabel("Basis")
 plt.show()
 
-# 5. REGIME SIGNALS
 color_map = {
     "Strong Bullish Bias": "green",
     "Strong Bearish Bias": "red",
@@ -171,7 +167,43 @@ colors = df["Trade_Signal"].map(color_map)
 
 plt.figure()
 plt.scatter(df["HenryHub"], df["Basis"], c=colors)
-plt.title("Gas Market Regime Signals")
-plt.xlabel("Henry Hub")
-plt.ylabel("Basis")
 plt.show()
+
+# -----------------------------
+# PERFORMANCE ANALYTICS
+# -----------------------------
+
+results = df.dropna(subset=["signal_return"])
+
+results["Correct_Direction"] = np.where(
+    ((results["Trade_Signal"] == "Strong Bullish Bias") & (results["price_change"] > 0)) |
+    ((results["Trade_Signal"] == "Strong Bearish Bias") & (results["price_change"] < 0)),
+    1,
+    0
+)
+
+win_rate = results["Correct_Direction"].mean()
+
+print("\n--- SIGNAL PERFORMANCE ---")
+print(f"Win Rate: {win_rate:.2%}")
+
+regime_perf = results.groupby("Season")["signal_return"].mean()
+print("\n--- SEASONAL PERFORMANCE ---")
+print(regime_perf)
+
+storage_perf = results.groupby("Storage_Regime")["signal_return"].mean()
+print("\n--- STORAGE PERFORMANCE ---")
+print(storage_perf)
+
+mean_return = results["signal_return"].mean()
+std_return = results["signal_return"].std()
+
+sharpe_proxy = mean_return / std_return if std_return != 0 else 0
+
+print("\n--- SHARPE PROXY ---")
+print(sharpe_proxy)
+
+edge_score = win_rate * sharpe_proxy
+
+print("\n--- EDGE SCORE ---")
+print(edge_score)
