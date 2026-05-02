@@ -43,10 +43,6 @@ aeco = aeco.sort_values("Date")
 df = pd.merge(hh, aeco, on="Date", how="inner")
 df = pd.merge(df, storage, on="Date", how="inner")
 
-# -----------------------------
-# DROP NA SAFETY
-# -----------------------------
-
 df = df.dropna().reset_index(drop=True)
 
 # -----------------------------
@@ -134,46 +130,10 @@ df["signal_return"] = df["price_change"].shift(-1) * signal
 df["cumulative_pnl"] = df["signal_return"].cumsum()
 
 # -----------------------------
-# PLOTS
-# -----------------------------
-
-plt.figure()
-plt.plot(df["Date"], df["cumulative_pnl"])
-plt.title("Natural Gas Strategy Backtest")
-plt.show()
-
-plt.figure()
-plt.plot(df["Date"], df["HenryHub"], label="Henry Hub")
-plt.plot(df["Date"], df["AECO"], label="AECO")
-plt.legend()
-plt.show()
-
-plt.figure()
-plt.plot(df["Date"], df["Basis"])
-plt.axhline(0)
-plt.show()
-
-plt.figure()
-plt.scatter(df["HenryHub"], df["Basis"])
-plt.show()
-
-color_map = {
-    "Strong Bullish Bias": "green",
-    "Strong Bearish Bias": "red",
-    "Neutral": "gray"
-}
-
-colors = df["Trade_Signal"].map(color_map)
-
-plt.figure()
-plt.scatter(df["HenryHub"], df["Basis"], c=colors)
-plt.show()
-
-# -----------------------------
 # PERFORMANCE ANALYTICS
 # -----------------------------
 
-results = df.dropna(subset=["signal_return"])
+results = df.dropna(subset=["signal_return"]).copy()
 
 results["Correct_Direction"] = np.where(
     ((results["Trade_Signal"] == "Strong Bullish Bias") & (results["price_change"] > 0)) |
@@ -207,3 +167,70 @@ edge_score = win_rate * sharpe_proxy
 
 print("\n--- EDGE SCORE ---")
 print(edge_score)
+
+# =========================================================
+# 🔥 EXPORT VISUALS (THIS IS WHAT YOU USE FOR LINKEDIN)
+# =========================================================
+
+# -----------------------------
+# HERO IMAGE (BASIS)
+# -----------------------------
+
+plt.figure(figsize=(12,6))
+
+plt.plot(df["Date"], df["Basis"], label="AECO - Henry Hub Basis")
+plt.axhline(df["Basis"].mean(), linestyle="--", label="Mean")
+
+plt.title("AECO vs Henry Hub Basis Dislocation")
+plt.xlabel("Date")
+plt.ylabel("Basis Spread")
+
+plt.legend()
+plt.tight_layout()
+
+plt.savefig("../outputs/hero_basis_chart.png", dpi=300)
+plt.close()
+
+# -----------------------------
+# CUMULATIVE PNL
+# -----------------------------
+
+plt.figure(figsize=(12,6))
+
+plt.plot(df["Date"], df["cumulative_pnl"])
+
+plt.title("Natural Gas Strategy Backtest")
+plt.xlabel("Date")
+plt.ylabel("Cumulative PnL")
+
+plt.tight_layout()
+
+plt.savefig("../outputs/cumulative_pnl.png", dpi=300)
+plt.close()
+
+# -----------------------------
+# REGIME SCATTER
+# -----------------------------
+
+color_map = {
+    "Strong Bullish Bias": "green",
+    "Strong Bearish Bias": "red",
+    "Neutral": "gray"
+}
+
+colors = df["Trade_Signal"].map(color_map)
+
+plt.figure(figsize=(8,6))
+
+plt.scatter(df["HenryHub"], df["Basis"], c=colors)
+
+plt.title("Gas Market Regime Classification")
+plt.xlabel("Henry Hub")
+plt.ylabel("Basis")
+
+plt.tight_layout()
+
+plt.savefig("../outputs/regime_scatter.png", dpi=300)
+plt.close()
+
+print("\n✅ Charts exported to /outputs folder")
