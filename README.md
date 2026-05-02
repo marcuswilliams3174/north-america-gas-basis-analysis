@@ -112,17 +112,6 @@ These conditions often create temporary inefficiencies where pricing deviates fr
 
 ---
 
-## Project Structure
-natural-gas-trading-model/
-│
-├── data/
-├── analysis.py
-├── requirements.txt
-├── README.md
-└── outputs/
-
----
-
 ## How to Run
 
 ```bash
