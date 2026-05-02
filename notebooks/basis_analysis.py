@@ -1,5 +1,6 @@
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
 
 # -----------------------------
 # LOAD DATA
@@ -38,12 +39,50 @@ aeco["Date"] = pd.to_datetime(aeco["Date"])
 # -----------------------------
 
 df = pd.merge(hh, aeco, on="Date", how="inner")
+# -----------------------------
+# SEASONAL LOGIC (WINTER VS SUMMER)
+# -----------------------------
+
+df["Month"] = df["Date"].dt.month
+
+df["Season"] = np.where(
+    df["Month"].isin([11, 12, 1, 2, 3]),
+    "Winter",
+    "Summer"
+)
 
 # -----------------------------
 # CALCULATE BASIS
 # -----------------------------
 
 df["Basis"] = df["AECO"] - df["HenryHub"]
+# -----------------------------
+# STORAGE REGIME SIGNAL
+# -----------------------------
+
+storage_mean = df["Storage"].mean()
+
+df["Storage_Regime"] = np.where(
+    df["Storage"] > storage_mean,
+    "High Storage (Bearish)",
+    "Low Storage (Bullish)"
+)
+# -----------------------------
+# SIMPLE TRADING SIGNAL
+# -----------------------------
+
+df["Trade_Signal"] = np.where(
+    (df["Storage_Regime"] == "Low Storage (Bullish)") &
+    (df["Season"] == "Winter"),
+    "Bullish Bias",
+
+    np.where(
+        (df["Storage_Regime"] == "High Storage (Bearish)") &
+        (df["Season"] == "Summer"),
+        "Bearish Bias",
+        "Neutral"
+    )
+)
 
 # -----------------------------
 # PLOTS
@@ -70,4 +109,23 @@ plt.scatter(df["HenryHub"], df["Basis"])
 plt.title("Price vs Basis Relationship")
 plt.xlabel("Henry Hub Price")
 plt.ylabel("Basis (AECO - HH)")
+plt.show()
+
+# -----------------------------
+# SIGNAL VISUALIZATION
+# -----------------------------
+
+color_map = {
+    "Bullish Bias": "green",
+    "Bearish Bias": "red",
+    "Neutral": "gray"
+}
+
+colors = df["Trade_Signal"].map(color_map)
+
+plt.figure()
+plt.scatter(df["HenryHub"], df["Basis"], c=colors)
+plt.title("Gas Market Regime Signals (Storage + Seasonality)")
+plt.xlabel("Henry Hub Price")
+plt.ylabel("AECO Basis")
 plt.show()
