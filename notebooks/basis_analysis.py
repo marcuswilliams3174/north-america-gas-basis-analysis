@@ -5,73 +5,69 @@ import matplotlib.pyplot as plt
 # LOAD DATA
 # -----------------------------
 
-price = pd.read_excel("../data/henry_hub_price.xls")
+hh = pd.read_excel("../data/henry_hub_price.xls")
 storage = pd.read_excel("../data/gas_storage.xls")
+aeco = pd.read_csv("../data/aeco_proxy.csv")
 
 # -----------------------------
-# CLEAN PRICE DATA
+# CLEAN HENRY HUB
 # -----------------------------
 
-price = price.dropna()
-
-# Rename columns (EIA format fix)
-price.columns = ["Date", "Price"]
-
-price["Date"] = pd.to_datetime(price["Date"])
-
-# Sort by date
-price = price.sort_values("Date")
+hh = hh.dropna()
+hh.columns = ["Date", "HenryHub"]
+hh["Date"] = pd.to_datetime(hh["Date"])
+hh = hh.sort_values("Date")
 
 # -----------------------------
-# CLEAN STORAGE DATA
+# CLEAN STORAGE
 # -----------------------------
 
 storage = storage.dropna()
-
-# Take first 2 columns only (date + storage)
 storage = storage.iloc[:, :2]
 storage.columns = ["Date", "Storage"]
-
 storage["Date"] = pd.to_datetime(storage["Date"])
 
 # -----------------------------
-# MERGE DATASETS
+# CLEAN AECO
 # -----------------------------
 
-df = pd.merge(price, storage, on="Date", how="inner")
+aeco["Date"] = pd.to_datetime(aeco["Date"])
 
 # -----------------------------
-# DERIVED METRICS
+# MERGE ALL DATA
 # -----------------------------
 
-df["price_change"] = df["Price"].pct_change()
+df = pd.merge(hh, aeco, on="Date", how="inner")
 
-df["storage_change"] = df["Storage"].pct_change()
+# -----------------------------
+# CALCULATE BASIS
+# -----------------------------
+
+df["Basis"] = df["AECO"] - df["HenryHub"]
 
 # -----------------------------
 # PLOTS
 # -----------------------------
 
-# 1. Price
+# 1. Henry Hub vs AECO
 plt.figure()
-plt.plot(df["Date"], df["Price"])
-plt.title("Henry Hub Natural Gas Price")
-plt.xlabel("Date")
-plt.ylabel("Price ($/MMBtu)")
+plt.plot(df["Date"], df["HenryHub"], label="Henry Hub")
+plt.plot(df["Date"], df["AECO"], label="AECO")
+plt.legend()
+plt.title("North American Gas Prices")
 plt.show()
 
-# 2. Storage
+# 2. BASIS SPREAD
 plt.figure()
-plt.plot(df["Date"], df["Storage"])
-plt.title("US Natural Gas Storage Levels")
-plt.xlabel("Date")
-plt.ylabel("Billion Cubic Feet")
+plt.plot(df["Date"], df["Basis"])
+plt.title("AECO - Henry Hub Basis Spread")
+plt.axhline(0)
 plt.show()
 
-# 3. Relationship (VERY IMPORTANT FOR TRADING)
+# 3. SIMPLE RELATIONSHIP VIEW
 plt.figure()
-plt.scatter(df["Storage"], df["Price"])
-plt.title("Storage vs Gas Price Relationship")
-plt.xlabel("Storage")
-plt.ylabel("Price")
+plt.scatter(df["HenryHub"], df["Basis"])
+plt.title("Price vs Basis Relationship")
+plt.xlabel("Henry Hub Price")
+plt.ylabel("Basis (AECO - HH)")
 plt.show()
