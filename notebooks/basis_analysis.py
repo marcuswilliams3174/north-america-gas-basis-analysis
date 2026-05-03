@@ -1,232 +1,182 @@
 import pandas as pd
-import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.pyplot as plt
 
-# -----------------------------
-# LOAD DATA
-# -----------------------------
+# =========================================================
+# 1. EXTRACT (ROBUST + SAFE)
+# =========================================================
 
-hh = pd.read_excel("../data/henry_hub_price.xls")
-storage = pd.read_excel("../data/gas_storage.xls")
-aeco = pd.read_csv("../data/aeco_proxy.csv")
+def extract(file, label):
+    xls = pd.ExcelFile(file)
 
-# -----------------------------
-# CLEAN HENRY HUB
-# -----------------------------
+    best = None
+    best_score = -1
 
-hh = hh.dropna()
-hh.columns = ["Date", "HenryHub"]
-hh["Date"] = pd.to_datetime(hh["Date"])
-hh = hh.sort_values("Date")
+    for sheet in xls.sheet_names:
+        raw = pd.read_excel(file, sheet_name=sheet)
+        raw.columns = [str(c).lower().strip() for c in raw.columns]
 
-# -----------------------------
-# CLEAN STORAGE
-# -----------------------------
+        for c in raw.columns:
 
-storage = storage.dropna()
-storage = storage.iloc[:, :2]
-storage.columns = ["Date", "Storage"]
-storage["Date"] = pd.to_datetime(storage["Date"])
-storage = storage.sort_values("Date")
+            dates = pd.to_datetime(raw[c], errors="coerce")
+            if dates.notna().sum() < 10:
+                continue
 
-# -----------------------------
-# CLEAN AECO
-# -----------------------------
+            for v in raw.columns:
+                if v == c:
+                    continue
 
+                vals = pd.to_numeric(
+                    raw[v].astype(str).str.replace(r"[^0-9\.\-]", "", regex=True),
+                    errors="coerce"
+                )
+
+                temp = pd.DataFrame({"Date": dates, label: vals}).dropna()
+
+                if len(temp) > best_score:
+                    best = temp
+                    best_score = len(temp)
+
+    if best is None:
+        raise ValueError(f"Could not extract usable data from {file}")
+
+    return best.sort_values("Date")
+
+
+# =========================================================
+# 2. LOAD DATA
+# =========================================================
+
+hh = extract("henry_hub_price.xls", "HH")
+storage = extract("gas_storage.xls", "Storage")
+
+aeco = pd.read_csv("aeco_proxy.csv")
+aeco.columns = ["Date", "AECO"]
 aeco["Date"] = pd.to_datetime(aeco["Date"])
-aeco = aeco.sort_values("Date")
+aeco["AECO"] = pd.to_numeric(aeco["AECO"], errors="coerce")
+aeco = aeco.dropna()
 
-# -----------------------------
-# MERGE ALL DATA (TIME-ALIGNED)
-# -----------------------------
 
-df = pd.merge(hh, aeco, on="Date", how="inner")
-df = pd.merge(df, storage, on="Date", how="inner")
+# =========================================================
+# 3. MONTHLY ALIGNMENT
+# =========================================================
 
-df = df.dropna().reset_index(drop=True)
+def monthly(df):
+    df["Date"] = df["Date"].dt.to_period("M").dt.to_timestamp()
+    return df.groupby("Date").mean().reset_index()
 
-# -----------------------------
-# FEATURE ENGINEERING
-# -----------------------------
+hh = monthly(hh)
+storage = monthly(storage)
+aeco = monthly(aeco)
 
-df["Month"] = df["Date"].dt.month
 
-df["Season"] = np.where(
-    df["Month"].isin([11, 12, 1, 2, 3]),
-    "Winter",
-    "Summer"
-)
+# =========================================================
+# 4. MERGE
+# =========================================================
 
-df["Basis"] = df["AECO"] - df["HenryHub"]
+df = hh.merge(aeco, on="Date", how="inner").merge(storage, on="Date", how="inner")
+df = df.sort_values("Date").reset_index(drop=True)
 
-df["price_change"] = df["HenryHub"].pct_change()
+# =========================================================
+# 5. SAFETY CHECKS
+# =========================================================
 
-df["volatility"] = df["price_change"].rolling(4).std()
+required = ["HH", "AECO", "Storage"]
+for col in required:
+    if col not in df.columns:
+        raise ValueError(f"Missing column: {col}")
 
-vol_threshold = df["volatility"].mean() + df["volatility"].std()
 
-df["Volatility_Event"] = df["volatility"] > vol_threshold
+# =========================================================
+# 6. FEATURES (STABLE + NO NaN PROPAGATION)
+# =========================================================
 
-# -----------------------------
-# SPREAD REGIMES
-# -----------------------------
+df["HH_norm"] = (df["HH"] - df["HH"].mean()) / (df["HH"].std() + 1e-9)
+df["AECO_norm"] = (df["AECO"] - df["AECO"].mean()) / (df["AECO"].std() + 1e-9)
 
-basis_mean = df["Basis"].mean()
-basis_std = df["Basis"].std()
+df["Basis"] = df["AECO_norm"] - df["HH_norm"]
 
-df["Spread_Regime"] = np.where(
-    df["Basis"] > basis_mean + basis_std,
-    "Wide Spread",
-    np.where(
-        df["Basis"] < basis_mean - basis_std,
-        "Tight Spread",
-        "Normal"
-    )
-)
+df["HH_ret"] = df["HH"].pct_change().fillna(0)
+df["vol"] = df["HH_ret"].rolling(6).std().fillna(df["HH_ret"].std() + 1e-6)
 
-# -----------------------------
-# STORAGE REGIME (SMOOTHED)
-# -----------------------------
+# robust storage z-score
+roll_mean = df["Storage"].rolling(12).mean()
+roll_std = df["Storage"].rolling(12).std()
 
-storage_ma = df["Storage"].rolling(52).mean()
+df["Storage_Z"] = (df["Storage"] - roll_mean) / (roll_std + 1e-9)
+df["Storage_Z"] = df["Storage_Z"].fillna(0)
 
-df["Storage_Regime"] = np.where(
-    df["Storage"] > storage_ma,
-    "High Storage (Bearish)",
-    "Low Storage (Bullish)"
-)
+# seasonality
+df["winter"] = df["Date"].dt.month.isin([11,12,1,2,3]).astype(int)
 
-# -----------------------------
-# TRADING SIGNAL
-# -----------------------------
 
-df["Trade_Signal"] = np.where(
-    (df["Storage_Regime"] == "Low Storage (Bullish)") &
-    (df["Season"] == "Winter") &
-    (df["Spread_Regime"] == "Wide Spread"),
-    "Strong Bullish Bias",
+# =========================================================
+# 7. SIGNALS (FULLY CLEAN)
+# =========================================================
 
-    np.where(
-        (df["Storage_Regime"] == "High Storage (Bearish)") &
-        (df["Season"] == "Summer") &
-        (df["Spread_Regime"] == "Tight Spread"),
-        "Strong Bearish Bias",
-        "Neutral"
-    )
-)
+q_high = df["Storage_Z"].quantile(0.8)
+q_low = df["Storage_Z"].quantile(0.2)
 
-# -----------------------------
-# BACKTEST (NO LOOKAHEAD BIAS)
-# -----------------------------
+df["signal"] = 0
 
-signal = np.where(
-    df["Trade_Signal"] == "Strong Bullish Bias",
-    1,
-    np.where(df["Trade_Signal"] == "Strong Bearish Bias", -1, 0)
-)
+df.loc[df["Storage_Z"] <= q_low, "signal"] = 1
+df.loc[df["Storage_Z"] >= q_high, "signal"] = -1
 
-df["signal_return"] = df["price_change"].shift(-1) * signal
+# winter adjustment
+df["signal"] = df["signal"].astype(float)
+df.loc[df["winter"] == 1, "signal"] *= 1.2
 
-df["cumulative_pnl"] = df["signal_return"].cumsum()
+# FINAL CLEANING (CRITICAL FIX)
+df["signal"] = df["signal"].fillna(0)
+df["signal"] = np.sign(df["signal"]).astype(int)
 
-# -----------------------------
-# PERFORMANCE ANALYTICS
-# -----------------------------
 
-results = df.dropna(subset=["signal_return"]).copy()
+# =========================================================
+# 8. RETURNS
+# =========================================================
 
-results["Correct_Direction"] = np.where(
-    ((results["Trade_Signal"] == "Strong Bullish Bias") & (results["price_change"] > 0)) |
-    ((results["Trade_Signal"] == "Strong Bearish Bias") & (results["price_change"] < 0)),
-    1,
-    0
-)
+df["position"] = df["signal"] / (df["vol"] + 1e-9)
 
-win_rate = results["Correct_Direction"].mean()
+df["strategy_ret"] = df["position"].shift(1) * df["HH_ret"]
+df["strategy_ret"] = df["strategy_ret"].fillna(0)
 
-print("\n--- SIGNAL PERFORMANCE ---")
-print(f"Win Rate: {win_rate:.2%}")
+df["cum_pnl"] = df["strategy_ret"].cumsum()
+df["benchmark"] = df["HH_ret"].cumsum()
 
-regime_perf = results.groupby("Season")["signal_return"].mean()
-print("\n--- SEASONAL PERFORMANCE ---")
-print(regime_perf)
 
-storage_perf = results.groupby("Storage_Regime")["signal_return"].mean()
-print("\n--- STORAGE PERFORMANCE ---")
-print(storage_perf)
+# =========================================================
+# 9. PLOTS (FIXED SCATTER ISSUE)
+# =========================================================
 
-mean_return = results["signal_return"].mean()
-std_return = results["signal_return"].std()
-
-sharpe_proxy = mean_return / std_return if std_return != 0 else 0
-
-print("\n--- SHARPE PROXY ---")
-print(sharpe_proxy)
-
-edge_score = win_rate * sharpe_proxy
-
-print("\n--- EDGE SCORE ---")
-print(edge_score)
-
-# -----------------------------
-# HERO IMAGE (BASIS)
-# -----------------------------
-
-plt.figure(figsize=(12,6))
-
-plt.plot(df["Date"], df["Basis"], label="AECO - Henry Hub Basis")
-plt.axhline(df["Basis"].mean(), linestyle="--", label="Mean")
-
-plt.title("AECO vs Henry Hub Basis Dislocation")
-plt.xlabel("Date")
-plt.ylabel("Basis Spread")
-
+plt.figure(figsize=(12,4))
+plt.plot(df["Date"], df["cum_pnl"], label="Strategy")
+plt.plot(df["Date"], df["benchmark"], label="Buy & Hold")
 plt.legend()
-plt.tight_layout()
+plt.title("Strategy vs Benchmark")
+plt.show()
 
-plt.savefig("../outputs/hero_basis_chart.png", dpi=300)
-plt.close()
+plt.figure(figsize=(12,4))
+plt.plot(df["Date"], df["Basis"])
+plt.title("AECO vs HH Spread")
+plt.show()
 
-# -----------------------------
-# CUMULATIVE PNL
-# -----------------------------
+# SAFE COLOR MAPPING (NO NaNs POSSIBLE)
+color_map = {1: "green", -1: "red", 0: "gray"}
+colors = df["signal"].astype(int).map(color_map)
 
-plt.figure(figsize=(12,6))
+plt.figure(figsize=(6,6))
+plt.scatter(df["HH_norm"], df["Basis"], c=colors)
+plt.title("Regime Map")
+plt.show()
 
-plt.plot(df["Date"], df["cumulative_pnl"])
 
-plt.title("Natural Gas Strategy Backtest")
-plt.xlabel("Date")
-plt.ylabel("Cumulative PnL")
+# =========================================================
+# 10. METRICS
+# =========================================================
 
-plt.tight_layout()
+sharpe = df["strategy_ret"].mean() / (df["strategy_ret"].std() + 1e-9)
+total_return = df["cum_pnl"].iloc[-1]
 
-plt.savefig("../outputs/cumulative_pnl.png", dpi=300)
-plt.close()
-
-# -----------------------------
-# REGIME SCATTER
-# -----------------------------
-
-color_map = {
-    "Strong Bullish Bias": "green",
-    "Strong Bearish Bias": "red",
-    "Neutral": "gray"
-}
-
-colors = df["Trade_Signal"].map(color_map)
-
-plt.figure(figsize=(8,6))
-
-plt.scatter(df["HenryHub"], df["Basis"], c=colors)
-
-plt.title("Gas Market Regime Classification")
-plt.xlabel("Henry Hub")
-plt.ylabel("Basis")
-
-plt.tight_layout()
-
-plt.savefig("../outputs/regime_scatter.png", dpi=300)
-plt.close()
-
-print("\n✅ Charts exported to /outputs folder")
+print("\nSharpe:", round(sharpe, 4))
+print("Total Return:", round(total_return, 4))
+print("Rows:", len(df))
