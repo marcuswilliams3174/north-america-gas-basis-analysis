@@ -3,7 +3,19 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # =========================================================
-# 1. EXTRACT (ROBUST + SAFE)
+# GLOBAL STYLE (TRADING DESK LOOK)
+# =========================================================
+
+plt.style.use("dark_background")
+
+def style_axis(ax, title):
+    ax.set_title(title, fontsize=14, fontweight="bold")
+    ax.grid(True, alpha=0.2)
+    for spine in ax.spines.values():
+        spine.set_alpha(0.3)
+
+# =========================================================
+# 1. ROBUST EXTRACTOR
 # =========================================================
 
 def extract(file, label):
@@ -17,7 +29,6 @@ def extract(file, label):
         raw.columns = [str(c).lower().strip() for c in raw.columns]
 
         for c in raw.columns:
-
             dates = pd.to_datetime(raw[c], errors="coerce")
             if dates.notna().sum() < 10:
                 continue
@@ -36,9 +47,6 @@ def extract(file, label):
                 if len(temp) > best_score:
                     best = temp
                     best_score = len(temp)
-
-    if best is None:
-        raise ValueError(f"Could not extract usable data from {file}")
 
     return best.sort_values("Date")
 
@@ -74,68 +82,66 @@ aeco = monthly(aeco)
 # 4. MERGE
 # =========================================================
 
-df = hh.merge(aeco, on="Date", how="inner").merge(storage, on="Date", how="inner")
+df = hh.merge(aeco, on="Date").merge(storage, on="Date")
 df = df.sort_values("Date").reset_index(drop=True)
 
-# =========================================================
-# 5. SAFETY CHECKS
-# =========================================================
-
-required = ["HH", "AECO", "Storage"]
-for col in required:
-    if col not in df.columns:
-        raise ValueError(f"Missing column: {col}")
-
 
 # =========================================================
-# 6. FEATURES (STABLE + NO NaN PROPAGATION)
+# 5. FEATURES
 # =========================================================
 
-df["HH_norm"] = (df["HH"] - df["HH"].mean()) / (df["HH"].std() + 1e-9)
-df["AECO_norm"] = (df["AECO"] - df["AECO"].mean()) / (df["AECO"].std() + 1e-9)
+# Normalized prices
+df["HH_norm"] = (df["HH"] - df["HH"].mean()) / df["HH"].std()
+df["AECO_norm"] = (df["AECO"] - df["AECO"].mean()) / df["AECO"].std()
 
+# Basis
 df["Basis"] = df["AECO_norm"] - df["HH_norm"]
 
+# Returns
 df["HH_ret"] = df["HH"].pct_change().fillna(0)
-df["vol"] = df["HH_ret"].rolling(6).std().fillna(df["HH_ret"].std() + 1e-6)
 
-# robust storage z-score
-roll_mean = df["Storage"].rolling(12).mean()
-roll_std = df["Storage"].rolling(12).std()
+# Volatility (annualized-ish)
+df["vol"] = df["HH_ret"].rolling(6).std().clip(lower=0.02)
 
-df["Storage_Z"] = (df["Storage"] - roll_mean) / (roll_std + 1e-9)
-df["Storage_Z"] = df["Storage_Z"].fillna(0)
+# Storage Z-score (rolling)
+df["Storage_Z"] = (
+    (df["Storage"] - df["Storage"].rolling(12).mean()) /
+    (df["Storage"].rolling(12).std() + 1e-6)
+).fillna(0)
 
-# seasonality
+# Seasonality
 df["winter"] = df["Date"].dt.month.isin([11,12,1,2,3]).astype(int)
 
 
 # =========================================================
-# 7. SIGNALS (FULLY CLEAN)
+# 6. SIGNALS (INSTITUTIONAL STYLE)
 # =========================================================
 
 q_high = df["Storage_Z"].quantile(0.8)
 q_low = df["Storage_Z"].quantile(0.2)
 
 df["signal"] = 0
-
 df.loc[df["Storage_Z"] <= q_low, "signal"] = 1
 df.loc[df["Storage_Z"] >= q_high, "signal"] = -1
 
-# winter adjustment
-df["signal"] = df["signal"].astype(float)
-df.loc[df["winter"] == 1, "signal"] *= 1.2
-
-# FINAL CLEANING (CRITICAL FIX)
+# seasonal tilt
+df["signal"] = df["signal"] * (1 + 0.2 * df["winter"])
 df["signal"] = df["signal"].fillna(0)
-df["signal"] = np.sign(df["signal"]).astype(int)
+
+
+# =========================================================
+# 7. POSITION SIZING (REALISTIC)
+# =========================================================
+
+df["position"] = df["signal"] / (df["vol"] + 1e-6)
+
+# cap leverage (CRITICAL)
+df["position"] = df["position"].clip(-5, 5)
 
 
 # =========================================================
 # 8. RETURNS
 # =========================================================
-
-df["position"] = df["signal"] / (df["vol"] + 1e-9)
 
 df["strategy_ret"] = df["position"].shift(1) * df["HH_ret"]
 df["strategy_ret"] = df["strategy_ret"].fillna(0)
@@ -145,38 +151,70 @@ df["benchmark"] = df["HH_ret"].cumsum()
 
 
 # =========================================================
-# 9. PLOTS (FIXED SCATTER ISSUE)
+# 9. PERFORMANCE METRICS
 # =========================================================
 
-plt.figure(figsize=(12,4))
-plt.plot(df["Date"], df["cum_pnl"], label="Strategy")
-plt.plot(df["Date"], df["benchmark"], label="Buy & Hold")
-plt.legend()
-plt.title("Strategy vs Benchmark")
-plt.show()
+def sharpe(x):
+    return x.mean() / (x.std() + 1e-6)
 
-plt.figure(figsize=(12,4))
-plt.plot(df["Date"], df["Basis"])
-plt.title("AECO vs HH Spread")
-plt.show()
+def max_dd(x):
+    cum = x.cumsum()
+    return (cum - cum.cummax()).min()
 
-# SAFE COLOR MAPPING (NO NaNs POSSIBLE)
-color_map = {1: "green", -1: "red", 0: "gray"}
-colors = df["signal"].astype(int).map(color_map)
-
-plt.figure(figsize=(6,6))
-plt.scatter(df["HH_norm"], df["Basis"], c=colors)
-plt.title("Regime Map")
-plt.show()
+print("\nSharpe:", round(sharpe(df["strategy_ret"]), 3))
+print("Max Drawdown:", round(max_dd(df["strategy_ret"]), 3))
+print("Final Return:", round(df["cum_pnl"].iloc[-1], 3))
 
 
 # =========================================================
-# 10. METRICS
+# 10. CHART 1 — STRATEGY VS BENCHMARK
 # =========================================================
 
-sharpe = df["strategy_ret"].mean() / (df["strategy_ret"].std() + 1e-9)
-total_return = df["cum_pnl"].iloc[-1]
+fig, ax = plt.subplots(figsize=(12,5))
 
-print("\nSharpe:", round(sharpe, 4))
-print("Total Return:", round(total_return, 4))
-print("Rows:", len(df))
+ax.plot(df["Date"], df["cum_pnl"], linewidth=2, label="Strategy")
+ax.plot(df["Date"], df["benchmark"], linestyle="--", label="Benchmark")
+
+style_axis(ax, "Strategy vs Benchmark (Cumulative Returns)")
+ax.legend()
+
+plt.show()
+
+
+# =========================================================
+# 11. CHART 2 — BASIS SPREAD
+# =========================================================
+
+fig, ax = plt.subplots(figsize=(12,5))
+
+ax.plot(df["Date"], df["Basis"], linewidth=2)
+ax.axhline(0, linestyle="--", alpha=0.5)
+
+style_axis(ax, "AECO vs Henry Hub Basis (Normalized Spread)")
+
+plt.show()
+
+
+# =========================================================
+# 12. CHART 3 — REGIME MAP
+# =========================================================
+
+# HARD FIX for your crash
+colors = df["signal"].map({1:"green", -1:"red", 0:"gray"})
+colors = colors.fillna("gray")
+
+fig, ax = plt.subplots(figsize=(7,7))
+
+ax.scatter(
+    df["HH_norm"],
+    df["Basis"],
+    c=colors,
+    alpha=0.7
+)
+
+style_axis(ax, "Market Regime Map (Storage-Driven Signals)")
+
+ax.set_xlabel("Henry Hub (Normalized)")
+ax.set_ylabel("Basis (AECO - HH)")
+
+plt.show()
