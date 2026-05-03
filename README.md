@@ -1,6 +1,6 @@
 # Natural Gas Regime-Based Trading Framework  
 ### AECO vs Henry Hub | Storage & Basis Signal Model  
-
+# Marcus Williams
 ---
 
 ## Overview  
