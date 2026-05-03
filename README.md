@@ -1,119 +1,42 @@
-# Natural Gas Market Structure & Trading Signal Model (AECO / Henry Hub)
+Natural Gas Regime-Based Trading Framework
+AECO vs Henry Hub | Storage & Basis Signal Model
+Overview
 
-## Overview
+This repository builds a regime-based framework for analyzing North American natural gas markets using AECO, Henry Hub, and storage data.
 
-This project builds a systematic analytical framework to evaluate North American natural gas markets, focusing on the relationship between **AECO (Western Canada pricing hub)** and **Henry Hub (US benchmark)**, and how this interacts with storage conditions, seasonal dynamics, and volatility regimes.
+The model translates physical market conditions into directional and relative value trading signals.
 
-The objective is to simulate how a supply & trading desk evaluates **basis behavior, regional pricing dislocations, and directional market bias** in natural gas markets.
+Core Idea
 
----
+Natural gas pricing is driven by recurring structural imbalances across:
 
-## Motivation
+Storage cycles (tight vs loose conditions)
+Seasonal demand shifts (winter vs summer)
+Regional basis dislocations (AECO vs Henry Hub)
+Volatility regimes linked to physical stress
 
-Natural gas pricing is driven by structural and cyclical forces:
+This framework maps these drivers into interpretable trading signals.
 
-- Regional supply-demand imbalances (AECO vs Henry Hub)
-- Storage levels and injection/withdrawal cycles
-- Seasonal demand shifts (winter heating vs summer injection)
-- Short-term volatility shocks and liquidity constraints
+Model Outputs
+Market regime classification (Bullish / Bearish / Neutral)
+AECO–Henry Hub basis dislocation signal
+Storage-driven directional bias
+Simple backtested performance vs buy-and-hold
+Key Insight
 
-This project translates these dynamics into a structured model for analyzing pricing behavior and generating simple trading signals.
+Storage stress combined with seasonal transitions is the primary driver of short-term gas price dislocations and basis volatility across North American hubs.
 
----
+Outputs
+Strategy vs Benchmark performance
+AECO–HH basis dynamics
+Regime classification map
 
-## Key Features
+(See /outputs folder for charts)
 
-### 1. Data Integration
-- Henry Hub spot prices
-- AECO proxy pricing
-- Natural gas storage data
-- Fully time-aligned dataset construction
+Tech Stack
 
----
+Python | Pandas | NumPy | Matplotlib | Time Series Analysis
 
-### 2. Feature Engineering
-- Seasonal classification (Winter vs Summer)
-- Basis spread (AECO – Henry Hub)
-- Rolling volatility measures
-- Storage regime classification
-- Spread regime detection (wide / tight / normal)
-
----
-
-### 3. Market Regime Logic
-
-- **Storage Regime**
-  - High storage → bearish pressure
-  - Low storage → bullish pressure
-
-- **Seasonality**
-  - Winter → demand-driven tightening
-  - Summer → injection-driven conditions
-
-- **Basis Regime**
-  - Wide spreads → regional constraint / dislocation
-  - Tight spreads → normalized conditions
-
----
-
-### 4. Trading Signal Construction
-
-Signals generated:
-
-- Strong Bullish Bias
-- Strong Bearish Bias
-- Neutral
-
-Based on:
-- Storage conditions
-- Seasonal regime
-- Basis spread regime
-
----
-
-### 5. Backtesting Framework
-
-A simplified signal-based evaluation framework:
-
-- Next-period directional returns
-- Cumulative PnL tracking
-- Strategy performance measurement
-
----
-
-### 6. Performance Analytics
-
-- Signal hit rate (win rate)
-- Seasonal performance breakdown
-- Storage regime sensitivity
-- Risk-adjusted return proxy (Sharpe-style)
-- Strategy edge score
-
----
-
-## Key Insight
-
-A structural feature of natural gas markets is that:
-
-> Basis dislocations between AECO and Henry Hub tend to widen during periods of storage stress and regional constraint, particularly during seasonal demand transitions.
-
-These conditions often create temporary inefficiencies where pricing deviates from underlying physical fundamentals.
-
----
-
-## Tools & Technologies
-
-- Python
-- Pandas
-- NumPy
-- Matplotlib
-- Time-series analysis
-- Basic quantitative signal modeling
-
----
-
-## How to Run
-
-```bash
+How to Run
 pip install -r requirements.txt
 python analysis.py
