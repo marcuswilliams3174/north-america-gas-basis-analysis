@@ -14,9 +14,7 @@ The model translates physical market conditions into **directional bias and rela
 
 ## Investment Memo (Download)
 
-📄 Full trading desk-style write-up:
-
-👉 [Download Natural Gas Market Memo (PDF)](outputs/natural_gas_memo.pdf)
+[Download Natural Gas Market Memo (PDF)](outputs/natural_gas_memo.pdf)
 
 *Note: If the preview does not render, download the file directly for full viewing.*
 
@@ -58,27 +56,24 @@ These periods represent conditions where pricing most frequently deviates from u
 
 ### 1. Strategy vs Benchmark (Cumulative Performance)
 
-![Strategy vs Benchmark](outputs/strategy_vs_benchmark.png)
+<img width="980" height="452" alt="Strategy vs Benchmark" src="https://github.com/user-attachments/assets/973e81f4-6d4f-4da4-b7ba-f70c95bc2820" />
 
-**Interpretation:**  
 Strategy performance is primarily driven by regime timing rather than directional market forecasting. Returns are concentrated during periods of storage-driven imbalance and seasonal transitions where pricing inefficiencies emerge.
 
 ---
 
 ### 2. AECO vs Henry Hub Basis Dynamics
 
-![Basis Spread](outputs/basis_spread.png)
-
-**Interpretation:**  
+<img width="980" height="452" alt="AECO vs Henry Hub Basis" src="https://github.com/user-attachments/assets/d871d13f-16a6-47bd-9d69-e7cf761e53b1" />
+ 
 The spread reflects regional dislocations between AECO and Henry Hub. Widening periods indicate supply constraints or transport limitations, while compression reflects balanced market conditions and reduced regional stress.
 
 ---
 
 ### 3. Regime Classification Map
 
-![Regime Map](outputs/regime_map.png)
+<img width="612" height="625" alt="Market Regime Map" src="https://github.com/user-attachments/assets/eeb21983-aefc-4b36-b6c7-2a0009ae67e8" />
 
-**Interpretation:**  
 The regime map shows how storage conditions and market momentum define discrete trading states. Clustering behavior highlights how physical fundamentals translate into repeatable pricing regimes.
 
 ---
