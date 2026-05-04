@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # =========================================================
-# GLOBAL STYLE (TRADING DESK LOOK)
+# GLOBAL STYLE
 # =========================================================
 
 plt.style.use("dark_background")
