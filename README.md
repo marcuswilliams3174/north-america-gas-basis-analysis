@@ -12,7 +12,7 @@ The model translates physical market conditions into **directional bias and rela
 
 ---
 
-## Investment Memo (Download)
+## Memo (Download)
 
 [Download Natural Gas Market Memo (PDF)](outputs/natural_gas_memo.pdf)
 
